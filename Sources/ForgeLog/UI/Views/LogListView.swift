@@ -60,7 +60,7 @@ struct LogListView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .dateRange:
-                DateRangePickerView(filter: $store.filter)
+                DateRangePickerView(filter: $store.filter, entries: store.entries)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .concepts:
