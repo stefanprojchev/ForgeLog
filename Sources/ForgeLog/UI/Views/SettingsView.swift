@@ -1,10 +1,10 @@
 #if os(iOS) || os(visionOS)
 import SwiftUI
 
-/// Settings — push-navigation, native `Form`. Visual layout matches the
-/// handoff prototype. The **Providers** section is specific to ForgeLog and
-/// lists the providers registered on `ForgeLog.shared` (Print, Console, Disk,
-/// CrashContext, FileExport, NotificationCenter, Remote, Filtered).
+/// Settings — themed `Form`. The **Providers** section is specific to
+/// ForgeLog and lists the providers registered on `ForgeLog.shared` (Print,
+/// Console, Disk, CrashContext, FileExport, NotificationCenter, Remote,
+/// Filtered).
 struct SettingsView: View {
     @ObservedObject var store: LogViewerStore
     @Environment(\.forgeTheme) private var theme
@@ -15,71 +15,140 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Capture") {
-                LabeledContent("Min level") {
-                    Text(store.configuration.minLevel.displayName)
-                        .foregroundColor(theme.text2)
-                }
-                LabeledContent("In-memory limit") {
-                    Text("\(store.configuration.inMemoryLimit) entries")
-                        .foregroundColor(theme.text2)
-                }
-            }
-
-            Section {
-                if store.providers.isEmpty {
-                    Text("No providers registered")
-                        .font(theme.sansFont(13))
-                        .foregroundColor(theme.text3)
-                } else {
-                    ForEach(store.providers) { provider in
-                        providerRow(provider)
-                    }
-                }
-            } header: {
-                Text("Providers · \(store.providers.count)")
-            } footer: {
-                Text("Active providers attached to ForgeLog.shared. Each provider sets its own minimum level.")
-                    .font(theme.sansFont(11))
-                    .foregroundColor(theme.text3)
-            }
-
-            Section("Appearance") {
-                Picker("Theme", selection: $themePref) {
-                    Text("System").tag("system")
-                    Text("Dark").tag("dark")
-                    Text("Light").tag("light")
-                }
-                Toggle("Show module tag", isOn: $showModuleTag)
-                Toggle("Show process tags", isOn: $showProcessTags)
-            }
-
-            Section("Storage") {
-                NavigationLink("Log concepts") {
-                    LogConceptsView()
-                }
-                Button {
-                    store.clearSession()
-                } label: {
-                    HStack {
-                        Text("Clear session")
-                        Spacer()
-                        Text("\(store.entries.count) entries")
-                            .foregroundColor(theme.text2)
-                    }
-                }
-            }
-
-            Section {
-                EmptyView()
-            } footer: {
-                Text("ForgeLog · session \(store.sessionID.uuidString.prefix(8))")
-                    .font(theme.monoFont(10.5))
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
+            captureSection
+            providersSection
+            appearanceSection
+            storageSection
+            footerSection
         }
+        .scrollContentBackground(.hidden)
+        .background(theme.bg.ignoresSafeArea())
+        .tint(theme.accent)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(theme.bgAlt, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+    }
+
+    // MARK: - Capture
+
+    private var captureSection: some View {
+        Section {
+            row(label: "Min level",     value: store.configuration.minLevel.displayName)
+            row(label: "In-memory limit", value: "\(store.configuration.inMemoryLimit) entries")
+        } header: {
+            sectionHeader("CAPTURE")
+        }
+        .listRowBackground(theme.surface)
+    }
+
+    // MARK: - Providers
+
+    private var providersSection: some View {
+        Section {
+            if store.providers.isEmpty {
+                Text("No providers registered")
+                    .font(theme.sansFont(13))
+                    .foregroundColor(theme.text3)
+                    .listRowBackground(theme.surface)
+            } else {
+                ForEach(store.providers) { provider in
+                    providerRow(provider)
+                        .listRowBackground(theme.surface)
+                }
+            }
+        } header: {
+            sectionHeader("PROVIDERS · \(store.providers.count)")
+        } footer: {
+            Text("Active providers attached to ForgeLog.shared. Each provider sets its own minimum level.")
+                .font(theme.sansFont(11))
+                .foregroundColor(theme.text3)
+        }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceSection: some View {
+        Section {
+            Picker(selection: $themePref) {
+                Text("System").tag("system")
+                Text("Dark").tag("dark")
+                Text("Light").tag("light")
+            } label: {
+                Text("Theme")
+                    .foregroundColor(theme.text1)
+            }
+            Toggle(isOn: $showModuleTag) {
+                Text("Show module tag")
+                    .foregroundColor(theme.text1)
+            }
+            Toggle(isOn: $showProcessTags) {
+                Text("Show process tags")
+                    .foregroundColor(theme.text1)
+            }
+        } header: {
+            sectionHeader("APPEARANCE")
+        }
+        .listRowBackground(theme.surface)
+    }
+
+    // MARK: - Storage
+
+    private var storageSection: some View {
+        Section {
+            NavigationLink {
+                LogConceptsView()
+            } label: {
+                Text("Log concepts")
+                    .foregroundColor(theme.text1)
+            }
+            Button {
+                store.clearSession()
+            } label: {
+                HStack {
+                    Text("Clear session")
+                        .foregroundColor(theme.text1)
+                    Spacer()
+                    Text("\(store.entries.count) entries")
+                        .foregroundColor(theme.text2)
+                }
+            }
+        } header: {
+            sectionHeader("STORAGE")
+        }
+        .listRowBackground(theme.surface)
+    }
+
+    // MARK: - Footer
+
+    private var footerSection: some View {
+        Section {
+            EmptyView()
+        } footer: {
+            Text("ForgeLog · session \(store.sessionID.uuidString.prefix(8))")
+                .font(theme.monoFont(10.5))
+                .foregroundColor(theme.text3)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    // MARK: - Building blocks
+
+    private func sectionHeader(_ text: String) -> some View {
+        Text(text)
+            .font(theme.monoFont(10, weight: .bold))
+            .tracking(0.7)
+            .foregroundColor(theme.text3)
+    }
+
+    private func row(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .foregroundColor(theme.text1)
+            Spacer()
+            Text(value)
+                .foregroundColor(theme.text2)
+        }
     }
 
     @ViewBuilder

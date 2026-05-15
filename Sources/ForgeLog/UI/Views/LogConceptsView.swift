@@ -53,12 +53,18 @@ struct LogConceptsView: View {
             .background(theme.bg.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Log Concepts").font(.headline)
+                    Text("Log Concepts")
+                        .font(.headline)
+                        .foregroundColor(theme.text1)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.fontWeight(.semibold)
+                    Button("Done") { dismiss() }
+                        .fontWeight(.semibold)
+                        .foregroundColor(theme.accent)
                 }
             }
+            .toolbarBackground(theme.bgAlt, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
         }
     }

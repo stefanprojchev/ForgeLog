@@ -1,22 +1,55 @@
 #if os(iOS) || os(visionOS)
 import SwiftUI
 
+/// Per-level counts. Explicit named fields avoid any `[LogLevel?: Int]`
+/// subscript ambiguity where keys can silently mismatch.
+struct LevelCounts: Equatable {
+    var all: Int
+    var debug: Int
+    var info: Int
+    var warning: Int
+    var error: Int
+
+    func count(for level: LogLevel?) -> Int {
+        guard let level else { return all }
+        switch level {
+        case .debug:   return debug
+        case .info:    return info
+        case .warning: return warning
+        case .error:   return error
+        }
+    }
+
+    static func compute(from entries: [LogEntry]) -> LevelCounts {
+        var debug = 0, info = 0, warning = 0, error = 0
+        for entry in entries {
+            switch entry.level {
+            case .debug:   debug += 1
+            case .info:    info += 1
+            case .warning: warning += 1
+            case .error:   error += 1
+            }
+        }
+        return LevelCounts(all: entries.count, debug: debug, info: info, warning: warning, error: error)
+    }
+
+    static let zero = LevelCounts(all: 0, debug: 0, info: 0, warning: 0, error: 0)
+}
+
 /// Row of 5 cards: All / Debug / Info / Warning / Error with counts.
 /// Tapping a card sets `selected`; tapping the active card clears it.
 struct LevelCardsView: View {
     @Binding var selected: LogLevel?
-    let counts: [LogLevel?: Int]
+    let counts: LevelCounts
     @Environment(\.forgeTheme) private var theme
 
     var body: some View {
         HStack(spacing: 5) {
-            cell(label: "All", level: nil, count: counts[nil] ?? 0, severity: theme.allSeverity)
-            ForEach(LogLevel.allCases, id: \.self) { lvl in
-                cell(label: lvl.displayName,
-                     level: lvl,
-                     count: counts[lvl] ?? 0,
-                     severity: theme.severity[lvl]!)
-            }
+            cell(label: "All",     level: nil,      count: counts.all,     severity: theme.allSeverity)
+            cell(label: "Debug",   level: .debug,   count: counts.debug,   severity: theme.severity[.debug]!)
+            cell(label: "Info",    level: .info,    count: counts.info,    severity: theme.severity[.info]!)
+            cell(label: "Warning", level: .warning, count: counts.warning, severity: theme.severity[.warning]!)
+            cell(label: "Error",   level: .error,   count: counts.error,   severity: theme.severity[.error]!)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

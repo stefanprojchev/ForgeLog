@@ -1,12 +1,15 @@
 #if os(iOS) || os(visionOS)
 import SwiftUI
 
-/// Bar-chart sparkline showing log volume across recent buckets, with bars
-/// colored by the highest severity that appeared in each bucket.
+/// Bar-chart sparkline showing log volume across the time range of the
+/// supplied entries, with bars colored by the highest severity in each bucket.
+///
+/// The window adapts to the data: if the entries span months, the sparkline
+/// shows that span; if they span seconds, it zooms in. Empty data renders a
+/// flat baseline of `theme.text4`.
 struct SparklineView: View {
-    @ObservedObject var store: LogViewerStore
+    let entries: [LogEntry]
     var bucketCount: Int = 60
-    var windowSeconds: TimeInterval = 2
     @Environment(\.forgeTheme) private var theme
 
     var body: some View {
@@ -19,22 +22,22 @@ struct SparklineView: View {
                 ForEach(buckets.indices, id: \.self) { i in
                     let b = buckets[i]
                     let ratio = CGFloat(b.count) / CGFloat(maxCount)
+                    let height = b.count == 0 ? CGFloat(1) : max(2, ratio * geo.size.height)
                     Rectangle()
                         .fill(barColor(for: b.maxLevel))
-                        .frame(width: barWidth, height: max(2, ratio * geo.size.height))
-                        .opacity(i > bucketCount * 11 / 12 ? 1 : 0.95)
+                        .frame(width: barWidth, height: height)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .topLeading) {
-                Text("−\(Int(windowSeconds))s")
+                Text(leftLabel)
                     .font(theme.monoFont(9))
                     .foregroundColor(theme.text3)
                     .tracking(0.3)
                     .padding(.leading, 2)
             }
             .overlay(alignment: .topTrailing) {
-                Text("NOW")
+                Text(rightLabel)
                     .font(theme.monoFont(9))
                     .foregroundColor(theme.text3)
                     .tracking(0.3)
@@ -51,17 +54,55 @@ struct SparklineView: View {
         )
     }
 
+    // MARK: - Labels
+
+    private var leftLabel: String {
+        guard let oldest = entries.map(\.timestamp).min() else { return "—" }
+        return Self.relativeLabel(for: oldest)
+    }
+
+    private var rightLabel: String {
+        guard let newest = entries.map(\.timestamp).max() else { return "—" }
+        // If the newest entry is within ~5 seconds of now, label as NOW.
+        if Date().timeIntervalSince(newest) < 5 { return "NOW" }
+        return Self.relativeLabel(for: newest)
+    }
+
+    /// "5s", "2m", "3h", "4d", "2w", "3mo" — short relative-to-now label.
+    private static func relativeLabel(for date: Date) -> String {
+        let secs = max(0, Date().timeIntervalSince(date))
+        switch secs {
+        case 0..<60:        return "\(Int(secs))s"
+        case 60..<3_600:    return "\(Int(secs / 60))m"
+        case 3_600..<86_400: return "\(Int(secs / 3_600))h"
+        case 86_400..<7 * 86_400:    return "\(Int(secs / 86_400))d"
+        case 7 * 86_400..<30 * 86_400: return "\(Int(secs / (7 * 86_400)))w"
+        default:            return "\(Int(secs / (30 * 86_400)))mo"
+        }
+    }
+
+    // MARK: - Bucketing
+
     private struct Bucket { let count: Int; let maxLevel: LogLevel? }
 
     private func computeBuckets() -> [Bucket] {
-        let now = Date()
-        let bucketDuration = windowSeconds / Double(bucketCount)
+        guard !entries.isEmpty else {
+            return Array(repeating: Bucket(count: 0, maxLevel: nil), count: bucketCount)
+        }
+
+        let timestamps = entries.map(\.timestamp)
+        let oldest = timestamps.min()!
+        let newest = timestamps.max()!
+        let span = max(1, newest.timeIntervalSince(oldest))
+        let bucketDuration = span / Double(bucketCount)
+
         var buckets: [Bucket] = Array(repeating: Bucket(count: 0, maxLevel: nil), count: bucketCount)
-        for entry in store.entries.reversed() {
-            let age = now.timeIntervalSince(entry.timestamp)
-            if age > windowSeconds { break }
-            let idx = bucketCount - 1 - Int(age / bucketDuration)
-            guard idx >= 0, idx < bucketCount else { continue }
+
+        for entry in entries {
+            let offset = entry.timestamp.timeIntervalSince(oldest)
+            var idx = Int(offset / bucketDuration)
+            if idx >= bucketCount { idx = bucketCount - 1 }
+            if idx < 0 { idx = 0 }
             let prev = buckets[idx]
             let newMax: LogLevel? = {
                 guard let prevLvl = prev.maxLevel else { return entry.level }
@@ -73,11 +114,7 @@ struct SparklineView: View {
     }
 
     private func barColor(for level: LogLevel?) -> Color {
-        guard let level else {
-            return theme.mode == .light
-                ? Color(hex: "#0058D8").opacity(0.32)
-                : Color(hex: "#5BA8FF").opacity(0.32)
-        }
+        guard let level else { return theme.text4 }
         return theme.severity[level]?.fg ?? theme.accent
     }
 }

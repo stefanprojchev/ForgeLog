@@ -29,10 +29,10 @@ struct LogListView: View {
     var body: some View {
         VStack(spacing: 0) {
             StatsStripView(store: store)
-            SparklineView(store: store)
+            SparklineView(entries: store.entries)
             LevelCardsView(
                 selected: $store.filter.level,
-                counts: levelCounts
+                counts: LevelCounts.compute(from: store.entries)
             )
             SearchAndDateBar(query: $store.filter.query,
                              onOpenDate: { presentedSheet = .dateRange })
@@ -44,6 +44,9 @@ struct LogListView: View {
         }
         .background(theme.bg.ignoresSafeArea())
         .toolbar { toolbarContent }
+        .toolbarBackground(theme.bgAlt, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(theme.accent)
         .navigationTitle("Log Viewer")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $presentedSheet) { sheet in
@@ -54,11 +57,11 @@ struct LogListView: View {
                     .presentationDragIndicator(.visible)
             case .filterPicker(let kind):
                 FilterPickerView(kind: kind, store: store)
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .dateRange:
                 DateRangePickerView(filter: $store.filter)
-                    .presentationDetents([.medium])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .concepts:
                 LogConceptsView()
@@ -70,13 +73,20 @@ struct LogListView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            Text("Log Viewer")
+                .font(.headline)
+                .foregroundColor(theme.text1)
+        }
         ToolbarItem(placement: .topBarTrailing) {
             HStack {
                 Button(action: { presentedSheet = .concepts }) {
                     Image(systemName: "info.circle")
+                        .foregroundColor(theme.accent)
                 }
                 NavigationLink(destination: SettingsView(store: store)) {
                     Image(systemName: "gearshape")
+                        .foregroundColor(theme.accent)
                 }
             }
         }
@@ -117,14 +127,6 @@ struct LogListView: View {
                 }
             }
         }
-    }
-
-    private var levelCounts: [LogLevel?: Int] {
-        var dict: [LogLevel?: Int] = [nil: store.entries.count]
-        for lvl in LogLevel.allCases {
-            dict[lvl] = store.count(for: lvl)
-        }
-        return dict
     }
 
     private func formatMarkdown(_ e: LogEntry) -> String {
@@ -220,7 +222,7 @@ private struct FilterChipsRow: View {
     @Environment(\.forgeTheme) private var theme
 
     private var activeCount: Int {
-        (filter.module == nil ? 0 : 1) +
+        (filter.modules.isEmpty ? 0 : 1) +
         (filter.processes.isEmpty ? 0 : 1) +
         (filter.classes.isEmpty ? 0 : 1)
     }
@@ -228,15 +230,15 @@ private struct FilterChipsRow: View {
     var body: some View {
         HStack(spacing: 6) {
             chip(label: "Module",
-                 value: filter.module ?? "All",
-                 isActive: filter.module != nil,
+                 value: display(filter.modules),
+                 isActive: !filter.modules.isEmpty,
                  action: onOpenModule)
             chip(label: "Process",
-                 value: processDisplay,
+                 value: display(filter.processes),
                  isActive: !filter.processes.isEmpty,
                  action: onOpenProcess)
             chip(label: "Class",
-                 value: classDisplay,
+                 value: display(filter.classes),
                  isActive: !filter.classes.isEmpty,
                  action: onOpenClass)
             if activeCount > 0 {
@@ -259,16 +261,9 @@ private struct FilterChipsRow: View {
         .padding(.bottom, 10)
     }
 
-    private var processDisplay: String {
-        guard !filter.processes.isEmpty else { return "All" }
-        let arr = Array(filter.processes)
-        if arr.count == 1 { return arr[0] }
-        return "\(arr[0]) +\(arr.count - 1)"
-    }
-
-    private var classDisplay: String {
-        guard !filter.classes.isEmpty else { return "All" }
-        let arr = Array(filter.classes)
+    private func display(_ set: Set<String>) -> String {
+        guard !set.isEmpty else { return "All" }
+        let arr = set.sorted()
         if arr.count == 1 { return arr[0] }
         return "\(arr[0]) +\(arr.count - 1)"
     }

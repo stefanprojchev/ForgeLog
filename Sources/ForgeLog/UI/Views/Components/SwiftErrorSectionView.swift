@@ -4,6 +4,7 @@ import SwiftUI
 struct SwiftErrorSectionView: View {
     let error: LoggedError
     @Environment(\.forgeTheme) private var theme
+    @State private var didCopy = false
 
     private var severity: ForgeLogTheme.Severity { theme.severity[.error]! }
 
@@ -44,9 +45,14 @@ struct SwiftErrorSectionView: View {
                 .foregroundColor(theme.text3)
             Spacer()
             Button(action: copyAll) {
-                Text("copy")
-                    .font(theme.monoFont(10, weight: .semibold))
-                    .foregroundColor(theme.accent)
+                HStack(spacing: 3) {
+                    Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 9))
+                    Text(didCopy ? "copied" : "copy")
+                        .font(theme.monoFont(10, weight: .semibold))
+                }
+                .foregroundColor(didCopy ? theme.success : theme.accent)
+                .animation(.easeOut(duration: 0.18), value: didCopy)
             }
             .buttonStyle(.plain)
         }
@@ -114,6 +120,11 @@ struct SwiftErrorSectionView: View {
         #if canImport(UIKit)
         UIPasteboard.general.string = out
         #endif
+        withAnimation(.easeOut(duration: 0.18)) { didCopy = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1500))
+            withAnimation(.easeIn(duration: 0.18)) { didCopy = false }
+        }
     }
 }
 #endif

@@ -5,7 +5,7 @@ import Foundation
 /// classes and processes are themselves strings.
 public struct FilterState: Equatable, Sendable {
     public var level: LogLevel? = nil
-    public var module: String? = nil
+    public var modules: Set<String> = []
     public var processes: Set<String> = []
     public var classes: Set<String> = []
     public var dateRange: ClosedRange<Date>? = nil
@@ -16,7 +16,7 @@ public struct FilterState: Equatable, Sendable {
     /// `true` when any filter is non-default. Drives the red "clear" X button.
     public var hasActiveFilters: Bool {
         level != nil ||
-        module != nil ||
+        !modules.isEmpty ||
         !processes.isEmpty ||
         !classes.isEmpty ||
         dateRange != nil ||
@@ -31,7 +31,7 @@ public struct FilterState: Equatable, Sendable {
     /// Wipe just the bottom-row filters (Module / Process / Class). Keeps
     /// level + search intact.
     public mutating func clearChipFilters() {
-        module = nil
+        modules = []
         processes = []
         classes = []
     }
@@ -39,7 +39,9 @@ public struct FilterState: Equatable, Sendable {
     /// Returns `true` when `entry` passes all active filters.
     public func matches(_ entry: LogEntry) -> Bool {
         if let level, entry.level != level { return false }
-        if let module, entry.module != module { return false }
+        if !modules.isEmpty {
+            guard let m = entry.module, modules.contains(m) else { return false }
+        }
         if !processes.isEmpty, !processes.contains(where: entry.processes.contains) { return false }
         if !classes.isEmpty, !classes.contains(entry.className) { return false }
         if let dateRange, !dateRange.contains(entry.timestamp) { return false }
