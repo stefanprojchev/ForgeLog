@@ -152,7 +152,36 @@ let exportURL = try await exporter.export(today, format: .json)
 
 ## UI
 
-Log-viewing UI is delivered separately and is not bundled with this package. The handoff design package owns visual identity for the Forge family.
+ForgeLog ships a full SwiftUI log viewer. Drop it anywhere:
+
+```swift
+import SwiftUI
+import ForgeLog
+
+struct DebugMenu: View {
+    var body: some View {
+        NavigationStack {
+            ForgeLogView()
+        }
+    }
+}
+```
+
+`ForgeLogView` owns a `LogViewerStore` that attaches a `LogViewerProvider` to `ForgeLog.shared` — every entry your app emits from that point on shows up in the viewer live. The viewer respects the system color scheme by default and persists a per-user override under `@AppStorage("forgeTheme")` (`"system"` / `"dark"` / `"light"`).
+
+The UI is **iOS-only** (also visionOS). On macOS the package still builds; UI types simply aren't present.
+
+### What the viewer exposes
+
+- Live stats strip — entries/sec, paused/live indicator, pause button
+- Sparkline by severity over the last 2 seconds
+- Per-level counts (All / Debug / Info / Warning / Error) as tappable cards
+- Search across message / class / module with 120ms debounce
+- Module / Process / Class filter pickers (multi-select with counts)
+- Date range picker with quick presets
+- Expandable rows with attachment chips (`{·} N`, `NSError`)
+- Detail sheet with structured `Parameters` and `Swift Error` sections
+- **Settings → Providers** — lists the providers currently attached to `ForgeLog.shared` with each provider's minimum level
 
 ## License
 
