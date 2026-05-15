@@ -164,10 +164,13 @@ private struct SearchAndDateBar: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 14))
                     .foregroundColor(theme.text3)
-                TextField("Search messages, classes…", text: $query)
+                TextField("", text: $query,
+                          prompt: Text("Search messages, classes…")
+                              .foregroundColor(theme.text3))
                     .textFieldStyle(.plain)
                     .font(theme.sansFont(13.5))
                     .foregroundColor(theme.text1)
+                    .tint(theme.accent)
                 if !query.isEmpty {
                     Button(action: { query = "" }) {
                         Image(systemName: "xmark.circle.fill")

@@ -112,11 +112,13 @@ struct FilterPickerView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13))
                 .foregroundColor(theme.text3)
-            TextField("Search \(universe.count) \(title.lowercased())\(universe.count == 1 ? "" : "s")",
-                      text: $query)
+            TextField("", text: $query,
+                      prompt: Text("Search \(universe.count) \(title.lowercased())\(universe.count == 1 ? "" : "s")")
+                          .foregroundColor(theme.text3))
                 .textFieldStyle(.plain)
                 .font(theme.sansFont(13.5))
                 .foregroundColor(theme.text1)
+                .tint(theme.accent)
             if !query.isEmpty {
                 Button(action: { query = "" }) {
                     Image(systemName: "xmark.circle.fill")
