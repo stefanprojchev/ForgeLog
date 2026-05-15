@@ -18,6 +18,13 @@ struct LogDetailView: View {
     /// the overlay toast and by per-row check icons. Auto-clears after 1.5s.
     @State private var lastCopied: CopyAction?
 
+    /// In-flight export format — shows a spinner inside the Export row while
+    /// the file is being written.
+    @State private var exportingFormat: LogExportFormat?
+
+    /// Most recent export result; presented in the shared `ExportShareSheet`.
+    @State private var exportedFile: ExportResult?
+
     enum CopyAction: Equatable {
         case message
         case fullEntry
@@ -27,6 +34,8 @@ struct LogDetailView: View {
     /// Number of entries shown above and below the current entry in the
     /// CONTEXT block. (Total context rows: up to `2 * contextRadius`.)
     private static let contextRadius = 4
+
+    private let exporter = LogExporter()
 
     init(entry: LogEntry, siblings: [LogEntry] = []) {
         self.initialEntry = entry
@@ -66,6 +75,11 @@ struct LogDetailView: View {
                         scroller.scrollTo("detail-top", anchor: .top)
                     }
                     lastCopied = nil
+                }
+                .sheet(item: $exportedFile) { result in
+                    ExportShareSheet(result: result)
+                        .presentationDetents([.medium])
+                        .presentationDragIndicator(.visible)
                 }
             }
             .toolbar {
@@ -374,15 +388,63 @@ struct LogDetailView: View {
                       hint: "Plain") {
                 copy(currentEntry.message, action: .message)
             }
+            exportMenu
             ShareLink(item: markdown) {
                 rowChrome(icon: "square.and.arrow.up",
-                          label: "Share entry",
-                          hint: nil,
+                          label: "Quick share",
+                          hint: "Markdown",
                           isCopied: false)
             }
             .buttonStyle(.plain)
         }
         .padding(.top, 4)
+    }
+
+    /// Menu that exports the single current entry in any supported format
+    /// and presents the same `ExportShareSheet` the list view uses.
+    private var exportMenu: some View {
+        Menu {
+            Section {
+                Text("Export this entry")
+            }
+            ForEach(LogExportFormat.allCases) { format in
+                Button {
+                    runExport(format: format)
+                } label: {
+                    Label {
+                        VStack(alignment: .leading) {
+                            Text(format.displayName)
+                            Text(format.subtitle)
+                        }
+                    } icon: {
+                        Image(systemName: format.iconName)
+                    }
+                }
+            }
+        } label: {
+            rowChrome(icon: exportingFormat == nil ? "square.and.arrow.up.on.square" : "ellipsis",
+                      label: exportingFormat == nil ? "Export as…" : "Exporting…",
+                      hint: exportingFormat?.displayName,
+                      isCopied: false)
+        }
+        .disabled(exportingFormat != nil)
+    }
+
+    private func runExport(format: LogExportFormat) {
+        guard exportingFormat == nil else { return }
+        exportingFormat = format
+        let entry = currentEntry
+        Task { @MainActor in
+            defer { exportingFormat = nil }
+            do {
+                let url = try await exporter.export([entry], format: format)
+                exportedFile = ExportResult(url: url, format: format, entryCount: 1)
+            } catch {
+                #if DEBUG
+                print("[ForgeLog] Detail export failed: \(error.localizedDescription)")
+                #endif
+            }
+        }
     }
 
     private func actionRow(action: CopyAction, icon: String, label: String, hint: String?, perform: @escaping () -> Void) -> some View {
