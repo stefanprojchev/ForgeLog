@@ -48,7 +48,6 @@ struct DateRangePickerView: View {
                     dateTilesRow
                     histogramSection
                     presetsRow
-                    timeOfDaySection
                     if filter.dateRange != nil {
                         clearButton
                     }
@@ -93,10 +92,23 @@ struct DateRangePickerView: View {
 
     @ViewBuilder
     private func endpointEditor(for endpoint: Endpoint) -> some View {
+        // Normalize the picked date to a day boundary: FROM → start of day,
+        // TO → end of day. The filter compares full timestamps, so without
+        // normalization a TO date picked at 10:00 would silently drop the
+        // rest of that day's entries.
         let binding = Binding<Date>(
             get: { endpoint == .from ? startDate : endDate },
             set: { newValue in
-                if endpoint == .from { startDate = newValue } else { endDate = newValue }
+                let cal = Calendar.current
+                let dayStart = cal.startOfDay(for: newValue)
+                let normalized: Date
+                switch endpoint {
+                case .from:
+                    normalized = dayStart
+                case .to:
+                    normalized = cal.date(byAdding: DateComponents(day: 1, second: -1), to: dayStart) ?? newValue
+                }
+                if endpoint == .from { startDate = normalized } else { endDate = normalized }
             }
         )
         let range: ClosedRange<Date> = {
@@ -114,7 +126,7 @@ struct DateRangePickerView: View {
                     "",
                     selection: binding,
                     in: range,
-                    displayedComponents: [.date, .hourAndMinute]
+                    displayedComponents: [.date]
                 )
                 .labelsHidden()
                 .datePickerStyle(.graphical)
@@ -207,14 +219,9 @@ struct DateRangePickerView: View {
                     .font(theme.monoFont(9.5, weight: .bold))
                     .tracking(0.6)
                     .foregroundColor(theme.text3)
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(Self.dayMonthFormatter.string(from: date))
-                        .font(theme.monoFont(18, weight: .bold))
-                        .foregroundColor(theme.text1)
-                    Text(Self.timeFormatter.string(from: date))
-                        .font(theme.monoFont(11))
-                        .foregroundColor(theme.text3)
-                }
+                Text(Self.dayMonthFormatter.string(from: date))
+                    .font(theme.monoFont(18, weight: .bold))
+                    .foregroundColor(theme.text1)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -368,50 +375,6 @@ struct DateRangePickerView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Time of Day (decorative)
-
-    private var timeOfDaySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("TIME OF DAY")
-                .font(theme.monoFont(10, weight: .bold))
-                .tracking(0.7)
-                .foregroundColor(theme.text3)
-            HStack(spacing: 10) {
-                timePill("00:00")
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(theme.text3)
-                timePill("23:59")
-                Spacer()
-                Text("all day")
-                    .font(theme.monoFont(11.5, weight: .semibold))
-                    .foregroundColor(theme.accent)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .background(theme.surface)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(theme.border, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-    }
-
-    private func timePill(_ text: String) -> some View {
-        Text(text)
-            .font(theme.monoFont(14, weight: .bold))
-            .foregroundColor(theme.text1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(theme.bg)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(theme.border, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
     // MARK: - Clear
 
     private var clearButton: some View {
@@ -443,13 +406,6 @@ struct DateRangePickerView: View {
     static let dayMonthFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
         f.locale = Locale(identifier: "en_US_POSIX")
         return f
     }()
