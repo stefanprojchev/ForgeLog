@@ -7,7 +7,17 @@ struct LogListView: View {
     @ObservedObject var store: LogViewerStore
     @State private var expandedID: LogEntry.ID?
     @State private var presentedSheet: ListSheet?
+
+    /// In-flight export format — drives a small ProgressView in the toolbar
+    /// while the file is being written.
+    @State private var exportingFormat: LogExportFormat?
+
+    /// The most recent export result; presented in a Share sheet.
+    @State private var exportedFile: ExportResult?
+
     @Environment(\.forgeTheme) private var theme
+
+    private let exporter = LogExporter()
 
     enum ListSheet: Identifiable {
         case detail(LogEntry)
@@ -25,6 +35,14 @@ struct LogListView: View {
     }
 
     enum FilterKind: String { case module, process, klass }
+
+    /// Wrapper that lets us identify the exported file for the share sheet.
+    struct ExportResult: Identifiable {
+        let url: URL
+        let format: LogExportFormat
+        let entryCount: Int
+        var id: URL { url }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +87,11 @@ struct LogListView: View {
                     .presentationDragIndicator(.visible)
             }
         }
+        .sheet(item: $exportedFile) { result in
+            ExportShareSheet(result: result)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     @ToolbarContentBuilder
@@ -79,15 +102,69 @@ struct LogListView: View {
                 .foregroundColor(theme.text1)
         }
         ToolbarItem(placement: .topBarTrailing) {
-            HStack {
+            HStack(spacing: 14) {
                 Button(action: { presentedSheet = .concepts }) {
                     Image(systemName: "info.circle")
                         .foregroundColor(theme.accent)
                 }
+                exportMenu
                 NavigationLink(destination: SettingsView(store: store)) {
                     Image(systemName: "gearshape")
                         .foregroundColor(theme.accent)
                 }
+            }
+        }
+    }
+
+    // MARK: - Export menu
+
+    @ViewBuilder
+    private var exportMenu: some View {
+        Menu {
+            Section {
+                Text("Export \(store.filteredEntries.count) filtered entr\(store.filteredEntries.count == 1 ? "y" : "ies")")
+            }
+            ForEach(LogExportFormat.allCases) { format in
+                Button {
+                    runExport(format: format)
+                } label: {
+                    Label {
+                        VStack(alignment: .leading) {
+                            Text(format.displayName)
+                            Text(format.subtitle)
+                        }
+                    } icon: {
+                        Image(systemName: format.iconName)
+                    }
+                }
+                .disabled(store.filteredEntries.isEmpty)
+            }
+        } label: {
+            if exportingFormat != nil {
+                ProgressView()
+                    .scaleEffect(0.75)
+            } else {
+                Image(systemName: "square.and.arrow.up")
+                    .foregroundColor(store.filteredEntries.isEmpty ? theme.text4 : theme.accent)
+            }
+        }
+        .disabled(store.filteredEntries.isEmpty || exportingFormat != nil)
+    }
+
+    private func runExport(format: LogExportFormat) {
+        guard exportingFormat == nil else { return }
+        let snapshot = store.filteredEntries
+        guard !snapshot.isEmpty else { return }
+        exportingFormat = format
+        Task { @MainActor in
+            defer { exportingFormat = nil }
+            do {
+                let url = try await exporter.export(snapshot, format: format)
+                exportedFile = ExportResult(url: url, format: format, entryCount: snapshot.count)
+            } catch {
+                #if DEBUG
+                print("[ForgeLog] Export failed: \(error.localizedDescription)")
+                #endif
             }
         }
     }
@@ -302,6 +379,88 @@ private struct FilterChipsRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Export share sheet
+
+/// Small confirmation/share sheet shown after a filtered export completes.
+/// Displays the format, entry count, and file name, plus a primary
+/// `ShareLink` button that lets the user route the file anywhere.
+private struct ExportShareSheet: View {
+    let result: LogListView.ExportResult
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.forgeTheme) private var theme
+
+    private var fileSizeLabel: String {
+        guard
+            let attrs = try? FileManager.default.attributesOfItem(atPath: result.url.path),
+            let size = attrs[.size] as? Int64
+        else { return "—" }
+        return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(theme.accentBg)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(theme.accentBd, lineWidth: 1)
+                    )
+                Image(systemName: result.format.iconName)
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundColor(theme.accent)
+            }
+            .frame(width: 84, height: 84)
+            .padding(.top, 8)
+
+            VStack(spacing: 4) {
+                Text("\(result.format.displayName) export ready")
+                    .font(theme.sansFont(17, weight: .bold))
+                    .foregroundColor(theme.text1)
+                Text("\(result.entryCount) entr\(result.entryCount == 1 ? "y" : "ies") · \(fileSizeLabel)")
+                    .font(theme.monoFont(11.5))
+                    .foregroundColor(theme.text3)
+            }
+
+            Text(result.url.lastPathComponent)
+                .font(theme.monoFont(12))
+                .foregroundColor(theme.text2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(theme.border, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            ShareLink(item: result.url) {
+                HStack {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Share file")
+                        .font(theme.sansFont(15, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(theme.accent)
+                .foregroundColor(theme.mode == .light ? .white : Color(hex: "#0B0B0E"))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .padding(.horizontal, 20)
+
+            Button("Done") { dismiss() }
+                .foregroundColor(theme.accent)
+                .padding(.bottom, 8)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.bg.ignoresSafeArea())
     }
 }
 #endif
