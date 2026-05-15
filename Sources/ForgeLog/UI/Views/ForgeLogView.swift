@@ -32,6 +32,12 @@ public struct ForgeLogView: View {
     public var body: some View {
         LogListView(store: store)
             .environment(\.forgeTheme, effectiveTheme)
+            // Force the SwiftUI color scheme so iOS-native components
+            // (DatePicker, Menu, Alert, sheets) render with the same mode
+            // as our themed surfaces. Without this, picking "Dark" in our
+            // settings while the phone is in Light keeps the DatePicker
+            // bright white over our dark canvas.
+            .preferredColorScheme(preferredColorScheme)
     }
 
     private var effectiveTheme: ForgeLogTheme {
@@ -39,6 +45,14 @@ public struct ForgeLogView: View {
         case "dark":  return .dark
         case "light": return .light
         default:      return systemScheme == .dark ? .dark : .light
+        }
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch themePref {
+        case "dark":  return .dark
+        case "light": return .light
+        default:      return nil   // follow system
         }
     }
 }
