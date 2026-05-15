@@ -18,6 +18,14 @@ struct DateRangePickerView: View {
     @State private var startDate: Date
     @State private var endDate: Date
 
+    /// Which tile is currently being edited. `nil` when no edit sheet is up.
+    @State private var editing: Endpoint?
+
+    enum Endpoint: Identifiable {
+        case from, to
+        var id: String { self == .from ? "from" : "to" }
+    }
+
     private static let histogramDays = 30
 
     init(filter: Binding<FilterState>, entries: [LogEntry] = []) {
@@ -73,6 +81,68 @@ struct DateRangePickerView: View {
             .toolbarBackground(theme.bgAlt, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $editing) { endpoint in
+                endpointEditor(for: endpoint)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    // MARK: - Endpoint editor sheet
+
+    @ViewBuilder
+    private func endpointEditor(for endpoint: Endpoint) -> some View {
+        let binding = Binding<Date>(
+            get: { endpoint == .from ? startDate : endDate },
+            set: { newValue in
+                if endpoint == .from { startDate = newValue } else { endDate = newValue }
+            }
+        )
+        let range: ClosedRange<Date> = {
+            // Constrain the endpoint so the selection stays valid.
+            let distantPast = Date(timeIntervalSince1970: 0)
+            let distantFuture = Date(timeIntervalSinceNow: 10 * 365 * 24 * 3600)
+            switch endpoint {
+            case .from: return distantPast...endDate
+            case .to:   return startDate...distantFuture
+            }
+        }()
+        NavigationStack {
+            VStack(spacing: 12) {
+                DatePicker(
+                    "",
+                    selection: binding,
+                    in: range,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .labelsHidden()
+                .datePickerStyle(.graphical)
+                .tint(theme.accent)
+                .padding(.horizontal, 14)
+                Spacer()
+            }
+            .padding(.top, 12)
+            .background(theme.bg.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { editing = nil }
+                        .foregroundColor(theme.accent)
+                }
+                ToolbarItem(placement: .principal) {
+                    Text(endpoint == .from ? "Edit FROM" : "Edit TO")
+                        .font(.headline)
+                        .foregroundColor(theme.text1)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { editing = nil }
+                        .fontWeight(.semibold)
+                        .foregroundColor(theme.accent)
+                }
+            }
+            .toolbarBackground(theme.bgAlt, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -120,38 +190,18 @@ struct DateRangePickerView: View {
 
     private var dateTilesRow: some View {
         HStack(spacing: 10) {
-            dateTileTo(label: "FROM", date: $startDate)
+            dateTile(label: "FROM", date: startDate, endpoint: .from)
             Image(systemName: "arrow.right")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(theme.text3)
-            dateTileFrom(label: "TO", date: $endDate)
+            dateTile(label: "TO", date: endDate, endpoint: .to)
         }
     }
 
-    private func dateTileTo(label: String, date: Binding<Date>) -> some View {
-        dateTileBackground(label: label, date: date.wrappedValue) {
-            DatePicker("", selection: date, in: ...endDate, displayedComponents: [.date])
-                .labelsHidden()
-                .datePickerStyle(.compact)
-                .tint(theme.accent)
-                .opacity(0.0001) // invisible hit-target; native popover opens on tap
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private func dateTileFrom(label: String, date: Binding<Date>) -> some View {
-        dateTileBackground(label: label, date: date.wrappedValue) {
-            DatePicker("", selection: date, in: startDate..., displayedComponents: [.date])
-                .labelsHidden()
-                .datePickerStyle(.compact)
-                .tint(theme.accent)
-                .opacity(0.0001)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private func dateTileBackground<Hit: View>(label: String, date: Date, @ViewBuilder hit: () -> Hit) -> some View {
-        ZStack(alignment: .topLeading) {
+    private func dateTile(label: String, date: Date, endpoint: Endpoint) -> some View {
+        Button {
+            editing = endpoint
+        } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                     .font(theme.monoFont(9.5, weight: .bold))
@@ -173,11 +223,13 @@ struct DateRangePickerView: View {
             .background(theme.surface)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(theme.accentBd, lineWidth: 1)
+                    .stroke(editing == endpoint ? theme.accent : theme.accentBd,
+                            lineWidth: editing == endpoint ? 2 : 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            hit()
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Histogram

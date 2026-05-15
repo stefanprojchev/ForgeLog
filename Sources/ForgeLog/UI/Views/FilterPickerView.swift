@@ -53,7 +53,6 @@ struct FilterPickerView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 searchBar
-                modeTabs
                 list
             }
             .background(theme.bg.ignoresSafeArea())
@@ -138,48 +137,6 @@ struct FilterPickerView: View {
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 10)
-    }
-
-    // MARK: - Mode tabs (Include is the only interactive one)
-
-    private var modeTabs: some View {
-        HStack(spacing: 0) {
-            modePill(title: "Include", active: true,  enabled: true)
-            modePill(title: "Exclude", active: false, enabled: false)
-            modePill(title: "Only",    active: false, enabled: false)
-        }
-        .padding(3)
-        .background(theme.surface)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(theme.border, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
-    }
-
-    private func modePill(title: String, active: Bool, enabled: Bool) -> some View {
-        Text(title)
-            .font(theme.sansFont(13, weight: .semibold))
-            .foregroundColor(active ? theme.text1 : theme.text4)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(
-                Group {
-                    if active {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(theme.surface2)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(theme.borderHi, lineWidth: 0.5)
-                            )
-                    } else {
-                        Color.clear
-                    }
-                }
-            )
-            .opacity(enabled ? 1 : 0.55)
     }
 
     // MARK: - List
