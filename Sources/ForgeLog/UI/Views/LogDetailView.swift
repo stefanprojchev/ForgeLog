@@ -2,7 +2,15 @@
 import SwiftUI
 
 struct LogDetailView: View {
-    let entry: LogEntry
+    /// The entry the sheet was opened with. `currentEntry` may diverge as the
+    /// user taps through the BEFORE / AFTER context list.
+    private let initialEntry: LogEntry
+
+    /// Surrounding entries used for the BEFORE / AFTER context block. The
+    /// detail view doesn't care about ordering — it sorts internally.
+    private let siblings: [LogEntry]
+
+    @State private var currentEntry: LogEntry
     @Environment(\.dismiss) private var dismiss
     @Environment(\.forgeTheme) private var theme
 
@@ -16,29 +24,50 @@ struct LogDetailView: View {
         case meta(String)
     }
 
+    /// Number of entries shown above and below the current entry in the
+    /// CONTEXT block. (Total context rows: up to `2 * contextRadius`.)
+    private static let contextRadius = 4
+
+    init(entry: LogEntry, siblings: [LogEntry] = []) {
+        self.initialEntry = entry
+        self.siblings = siblings
+        _currentEntry = State(initialValue: entry)
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    messageBlock
-                    if let params = entry.paramsMetadata, !params.isEmpty {
-                        ParametersSectionView(params: params)
+            ScrollViewReader { scroller in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        messageBlock
+                        if let params = currentEntry.paramsMetadata, !params.isEmpty {
+                            ParametersSectionView(params: params)
+                        }
+                        if let error = currentEntry.loggedError {
+                            SwiftErrorSectionView(error: error)
+                        }
+                        sourceSection
+                        if !currentEntry.processes.isEmpty {
+                            processesSection
+                        }
+                        if !contextBefore.isEmpty || !contextAfter.isEmpty {
+                            contextSection
+                        }
+                        actions
                     }
-                    if let error = entry.loggedError {
-                        SwiftErrorSectionView(error: error)
-                    }
-                    sourceSection
-                    if !entry.processes.isEmpty {
-                        processesSection
-                    }
-                    actions
+                    .padding(.horizontal, 14)
+                    .padding(.top, 14)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-                .padding(.bottom, 24)
+                .background(theme.bg.ignoresSafeArea())
+                .overlay(alignment: .bottom) { copyToast }
+                .onChange(of: currentEntry.id) {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        scroller.scrollTo("detail-top", anchor: .top)
+                    }
+                    lastCopied = nil
+                }
             }
-            .background(theme.bg.ignoresSafeArea())
-            .overlay(alignment: .bottom) { copyToast }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
@@ -46,14 +75,14 @@ struct LogDetailView: View {
                 }
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
-                        SeverityLetterView(level: entry.level, size: 14)
-                        Text(entry.level.displayName)
+                        SeverityLetterView(level: currentEntry.level, size: 14)
+                        Text(currentEntry.level.displayName)
                             .font(.headline)
                             .foregroundColor(theme.text1)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: entry.message) {
+                    ShareLink(item: currentEntry.message) {
                         Text("Share")
                             .fontWeight(.semibold)
                             .foregroundColor(theme.accent)
@@ -71,8 +100,9 @@ struct LogDetailView: View {
     private var messageBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("MESSAGE")
+                .id("detail-top")
             ZStack(alignment: .topTrailing) {
-                Text(entry.message)
+                Text(currentEntry.message)
                     .font(theme.monoFont(12.5))
                     .foregroundColor(theme.text1)
                     .lineSpacing(4)
@@ -84,7 +114,7 @@ struct LogDetailView: View {
                             .stroke(theme.border, lineWidth: 1)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 10))
-                Button(action: { copy(entry.message, action: .message) }) {
+                Button(action: { copy(currentEntry.message, action: .message) }) {
                     HStack(spacing: 4) {
                         Image(systemName: lastCopied == .message ? "checkmark" : "doc.on.doc")
                             .font(.system(size: 11))
@@ -114,17 +144,17 @@ struct LogDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("SOURCE")
             VStack(spacing: 0) {
-                metaRowCustom(key: "module", copyValue: entry.moduleOrFallback) {
-                    ModuleTagView(module: entry.moduleOrFallback)
+                metaRowCustom(key: "module", copyValue: currentEntry.moduleOrFallback) {
+                    ModuleTagView(module: currentEntry.moduleOrFallback)
                 }
                 divider
-                metaRow(key: "class", value: entry.className, color: theme.text1, mono: true)
+                metaRow(key: "class", value: currentEntry.className, color: theme.text1, mono: true)
                 divider
-                metaRow(key: "function", value: entry.function, color: theme.accent, mono: true)
+                metaRow(key: "function", value: currentEntry.function, color: theme.accent, mono: true)
                 divider
-                metaRow(key: "line", value: "\(entry.line)", color: theme.text1, mono: true)
+                metaRow(key: "line", value: "\(currentEntry.line)", color: theme.text1, mono: true)
                 divider
-                metaRow(key: "id", value: entry.id.uuidString, color: theme.text3, mono: true, truncate: true)
+                metaRow(key: "id", value: currentEntry.id.uuidString, color: theme.text3, mono: true, truncate: true)
             }
             .background(theme.surface)
             .overlay(
@@ -197,9 +227,9 @@ struct LogDetailView: View {
 
     private var processesSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("PROCESSES · \(entry.processes.count)")
+            sectionLabel("PROCESSES · \(currentEntry.processes.count)")
             FlowLayout(spacing: 5) {
-                ForEach(entry.processes, id: \.self) { p in
+                ForEach(currentEntry.processes, id: \.self) { p in
                     Text("#\(p.replacingOccurrences(of: " ", with: ""))")
                         .font(theme.monoFont(11))
                         .foregroundColor(theme.text1)
@@ -216,6 +246,118 @@ struct LogDetailView: View {
         }
     }
 
+    // MARK: - Context (BEFORE / AFTER)
+
+    /// Entries chronologically older than the current entry — oldest first.
+    private var contextBefore: [LogEntry] {
+        let sorted = siblings.sorted { $0.timestamp < $1.timestamp }
+        guard let idx = sorted.firstIndex(where: { $0.id == currentEntry.id }) else { return [] }
+        let lower = max(0, idx - Self.contextRadius)
+        return Array(sorted[lower..<idx])
+    }
+
+    /// Entries chronologically newer than the current entry — oldest first.
+    private var contextAfter: [LogEntry] {
+        let sorted = siblings.sorted { $0.timestamp < $1.timestamp }
+        guard let idx = sorted.firstIndex(where: { $0.id == currentEntry.id }) else { return [] }
+        let upper = min(sorted.count, idx + 1 + Self.contextRadius)
+        return Array(sorted[(idx + 1)..<upper])
+    }
+
+    private var contextSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("CONTEXT · \(contextBefore.count + contextAfter.count) nearby entries")
+            VStack(spacing: 0) {
+                if !contextBefore.isEmpty {
+                    contextHeader(title: "BEFORE", count: contextBefore.count, icon: "arrow.up")
+                    ForEach(Array(contextBefore.enumerated()), id: \.element.id) { idx, entry in
+                        contextRow(entry: entry, isLast: idx == contextBefore.count - 1 && contextAfter.isEmpty)
+                    }
+                }
+                if !contextAfter.isEmpty {
+                    contextHeader(title: "AFTER", count: contextAfter.count, icon: "arrow.down")
+                    ForEach(Array(contextAfter.enumerated()), id: \.element.id) { idx, entry in
+                        contextRow(entry: entry, isLast: idx == contextAfter.count - 1)
+                    }
+                }
+            }
+            .background(theme.surface)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(theme.border, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func contextHeader(title: String, count: Int, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(theme.text3)
+            Text("\(title) · \(count)")
+                .font(theme.monoFont(9.5, weight: .bold))
+                .tracking(0.7)
+                .foregroundColor(theme.text3)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(theme.bgAlt)
+        .overlay(
+            Rectangle().fill(theme.border).frame(height: 0.5),
+            alignment: .bottom
+        )
+    }
+
+    private func contextRow(entry: LogEntry, isLast: Bool) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                currentEntry = entry
+            }
+        } label: {
+            HStack(spacing: 10) {
+                SeverityLetterView(level: entry.level, size: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(entry.formattedTime)
+                            .font(theme.monoFont(10))
+                            .foregroundColor(theme.text2)
+                        ModuleTagView(module: entry.moduleOrFallback)
+                        Text(entry.className)
+                            .font(theme.monoFont(10))
+                            .foregroundColor(theme.text3)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                        AttachmentIndicatorView(entry: entry)
+                    }
+                    Text(entry.message)
+                        .font(theme.monoFont(11.5))
+                        .foregroundColor(entry.level == .error ? theme.severity[.error]!.fg : theme.text1)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(theme.text3)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .overlay(
+                Group {
+                    if !isLast {
+                        Rectangle().fill(theme.border).frame(height: 0.5)
+                    }
+                },
+                alignment: .bottom
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Actions
 
     private var actions: some View {
@@ -230,7 +372,7 @@ struct LogDetailView: View {
                       icon: "text.quote",
                       label: "Copy message only",
                       hint: "Plain") {
-                copy(entry.message, action: .message)
+                copy(currentEntry.message, action: .message)
             }
             ShareLink(item: markdown) {
                 rowChrome(icon: "square.and.arrow.up",
@@ -320,15 +462,15 @@ struct LogDetailView: View {
     // MARK: - Markdown
 
     private var markdown: String {
-        var out = "**[\(entry.level.displayName.uppercased())]** `\(entry.formattedTime)` `\(entry.moduleOrFallback)` `\(entry.location)`\n\n\(entry.message)"
-        if let params = entry.paramsMetadata, !params.isEmpty {
+        var out = "**[\(currentEntry.level.displayName.uppercased())]** `\(currentEntry.formattedTime)` `\(currentEntry.moduleOrFallback)` `\(currentEntry.location)`\n\n\(currentEntry.message)"
+        if let params = currentEntry.paramsMetadata, !params.isEmpty {
             out += "\n\n```\n"
             for (k, v) in params.sorted(by: { $0.key < $1.key }) {
                 out += "\(k) = \(v.display)\n"
             }
             out += "```"
         }
-        if let err = entry.loggedError {
+        if let err = currentEntry.loggedError {
             out += "\n\n**Error:** \(err.domain) code \(err.code)\n> \(err.description)"
         }
         return out

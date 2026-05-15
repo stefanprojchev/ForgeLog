@@ -52,7 +52,7 @@ struct LogListView: View {
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .detail(let entry):
-                LogDetailView(entry: entry)
+                LogDetailView(entry: entry, siblings: store.filteredEntries)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .filterPicker(let kind):
