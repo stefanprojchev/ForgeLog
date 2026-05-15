@@ -20,12 +20,20 @@ public struct LogViewerConfiguration: Sendable {
 /// Observable backing store for `ForgeLogView`. Hosts the live in-memory ring,
 /// filter state, and rate. Itself a thin layer on top of `ForgeLog` — it
 /// subscribes via a `LogViewerProvider` registered into `ForgeLog.shared`.
+///
+/// `filteredEntries` is intentionally a **computed property**, not a
+/// `@Published` one. This avoids the asynchronous propagation gap that a
+/// Combine pipeline (`receive(on: .main).assign(to: &$filteredEntries)`)
+/// introduces — when SwiftUI re-renders after a filter change, the body
+/// reads the latest filter+entries directly, so the result is correct on
+/// the same runloop tick. With ObservableObject, any `@Published` change
+/// (filter, entries, isPaused, ...) re-invalidates observing views, which
+/// re-reads `filteredEntries` and recomputes.
 @MainActor
 public final class LogViewerStore: ObservableObject {
     @Published public private(set) var entries: [LogEntry] = []
     @Published public var filter: FilterState = FilterState()
     @Published public var isPaused: Bool = false
-    @Published public private(set) var filteredEntries: [LogEntry] = []
     @Published public private(set) var rate: Double = 0
 
     public let configuration: LogViewerConfiguration
@@ -48,7 +56,7 @@ public final class LogViewerStore: ObservableObject {
         self.configuration = configuration
         self.logger = logger
         self.providers = logger.providerInfos
-        setupPipeline()
+        setupRatePublisher()
         attachProvider()
     }
 
@@ -73,6 +81,15 @@ public final class LogViewerStore: ObservableObject {
         capEntries()
     }
 
+    // MARK: - Derived data
+
+    /// Entries that pass the current filter, ordered newest-first for the list
+    /// view. Computed (not `@Published`) so it always reflects the latest
+    /// `entries` + `filter` synchronously.
+    public var filteredEntries: [LogEntry] {
+        entries.reversed().filter(filter.matches)
+    }
+
     // MARK: - Universe queries (for filter pickers and stats)
 
     public var allModules: [String] {
@@ -94,29 +111,9 @@ public final class LogViewerStore: ObservableObject {
 
     // MARK: - Private
 
-    private func setupPipeline() {
-        // Filtered entries — recomputed on every entries / filter change.
-        // Debounce on `filter.query` so live typing isn't expensive.
-        let queryChanges = $filter
-            .map(\.query)
-            .removeDuplicates()
-            .debounce(for: .milliseconds(120), scheduler: DispatchQueue.main)
-        let otherChanges = $filter
-            .map { f -> FilterState in
-                var copy = f; copy.query = ""; return copy
-            }
-            .removeDuplicates()
-
-        Publishers.CombineLatest3($entries, queryChanges, otherChanges)
-            .map { [weak self] entries, _, _ in
-                guard let self else { return [] }
-                let f = self.filter
-                return entries.reversed().filter(f.matches)
-            }
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$filteredEntries)
-
-        // Rate — entries/sec over the last 1s window.
+    private func setupRatePublisher() {
+        // Rate — entries/sec over the last 1s window. Independent of the
+        // filter pipeline so it's just a heartbeat.
         Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .map { [weak self] _ -> Double in
