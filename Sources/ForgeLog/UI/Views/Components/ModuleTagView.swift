@@ -2,11 +2,16 @@
 import SwiftUI
 
 /// Colored module pill — uppercase mono with a tinted background.
-struct ModuleTagView: View {
-    let module: String
+///
+/// SPI-exposed so the `ForgeNet` target can reuse it for the caller-module
+/// display on network rows.
+@_spi(ForgeLogPrimitives) public struct ModuleTagView: View {
+    public let module: String
     @Environment(\.forgeTheme) private var theme
 
-    var body: some View {
+    public init(module: String) { self.module = module }
+
+    public var body: some View {
         let c = theme.moduleColor(for: module)
         Text(module.uppercased())
             .font(theme.monoFont(9.5, weight: .bold))

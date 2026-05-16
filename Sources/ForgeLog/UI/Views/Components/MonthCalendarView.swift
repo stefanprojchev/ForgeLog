@@ -5,15 +5,15 @@ import SwiftUI
 /// chevrons, weekday labels, day grid. Used in place of SwiftUI's
 /// `DatePicker(.graphical)` so the month/year header can't be tapped to
 /// expand into a year picker (SwiftUI has no public knob for that).
-struct MonthCalendarView: View {
-    @Binding var selection: Date
-    let range: ClosedRange<Date>
+@_spi(ForgeLogPrimitives) public struct MonthCalendarView: View {
+    @Binding public var selection: Date
+    public let range: ClosedRange<Date>
     @Environment(\.forgeTheme) private var theme
 
     @State private var displayedMonth: Date
     private let calendar: Calendar
 
-    init(selection: Binding<Date>, in range: ClosedRange<Date>) {
+    public init(selection: Binding<Date>, in range: ClosedRange<Date>) {
         self._selection = selection
         self.range = range
         let cal = Calendar.current
@@ -23,7 +23,7 @@ struct MonthCalendarView: View {
         self._displayedMonth = State(initialValue: monthStart)
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 14) {
             header
             VStack(spacing: 8) {

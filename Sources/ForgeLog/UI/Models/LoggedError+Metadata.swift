@@ -1,34 +1,15 @@
 #if os(iOS) || os(visionOS)
 import Foundation
 
-/// Presentation snapshot of an `Error` derived from an entry's metadata.
-/// `ForgeLog` flattens errors into `entry.metadata` via `AnyCodableValue.from(_ error:)`;
-/// this view-side struct reconstructs the shape `LogDetailView` needs.
-public struct LoggedError: Equatable, Sendable {
-    public let domain: String
-    public let code: Int
-    public let description: String
-    public let userInfo: [String: AnyCodableValue]
-
-    public init(
-        domain: String,
-        code: Int,
-        description: String,
-        userInfo: [String: AnyCodableValue] = [:]
-    ) {
-        self.domain = domain
-        self.code = code
-        self.description = description
-        self.userInfo = userInfo
-    }
-}
-
+/// Log-side helpers that reconstruct a `LoggedError` from the
+/// `AnyCodableValue` metadata `AnyCodableValue.from(_ error:)` flattens. Lives
+/// in the UI layer because it's only used to drive log detail views — the
+/// core `LoggedError` type lives in `Models/` and is consumed by
+/// `NetworkLogEntry` from the ForgeNet target as well.
 public extension LoggedError {
     /// Pulls a `LoggedError` out of metadata if the entry was logged with an
-    /// `Error` (i.e. the metadata has the `domain` / `code` shape produced by
-    /// `AnyCodableValue.from(_ error:)`).
-    ///
-    /// Returns `nil` for metadata that doesn't look like an error payload.
+    /// `Error` (i.e. metadata has the `domain` / `code` shape produced by
+    /// `AnyCodableValue.from(_ error:)`). Returns `nil` otherwise.
     init?(metadata: [String: AnyCodableValue]?) {
         guard let metadata,
               case .string(let domain) = metadata["domain"] ?? .null,

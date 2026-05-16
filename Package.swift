@@ -10,6 +10,7 @@ let package = Package(
     ],
     products: [
         .library(name: "ForgeLog", targets: ["ForgeLog"]),
+        .library(name: "ForgeNet", targets: ["ForgeNet"]),
     ],
     dependencies: [
         .package(url: "https://github.com/stefanprojchev/ForgeCore.git", from: "1.0.0"),
@@ -19,6 +20,12 @@ let package = Package(
             name: "ForgeLog",
             dependencies: [
                 .product(name: "ForgeCore", package: "ForgeCore"),
+            ]
+        ),
+        .target(
+            name: "ForgeNet",
+            dependencies: [
+                "ForgeLog",
             ]
         ),
         .testTarget(

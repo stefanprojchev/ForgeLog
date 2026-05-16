@@ -2,7 +2,7 @@ import Foundation
 
 /// A type-erased Codable value that can represent JSON primitives,
 /// arrays, and dictionaries. Used for structured log metadata.
-public enum AnyCodableValue: Codable, Sendable, Equatable, CustomStringConvertible {
+public enum AnyCodableValue: Codable, Sendable, Hashable, CustomStringConvertible {
     case string(String)
     case int(Int)
     case double(Double)

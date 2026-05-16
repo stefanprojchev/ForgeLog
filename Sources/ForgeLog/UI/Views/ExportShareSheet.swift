@@ -2,22 +2,29 @@
 import SwiftUI
 
 /// Wrapper that lets us identify an exported file for SwiftUI sheets.
-/// Internal to the package so both `LogListView` (filtered set export) and
-/// `LogDetailView` (single entry export) can use it.
-struct ExportResult: Identifiable {
-    let url: URL
-    let format: LogExportFormat
-    let entryCount: Int
-    var id: URL { url }
+/// SPI-exposed so the `ForgeNet` target can reuse the same export pipeline.
+@_spi(ForgeLogPrimitives) public struct ExportResult: Identifiable {
+    public let url: URL
+    public let format: LogExportFormat
+    public let entryCount: Int
+    public var id: URL { url }
+
+    public init(url: URL, format: LogExportFormat, entryCount: Int) {
+        self.url = url
+        self.format = format
+        self.entryCount = entryCount
+    }
 }
 
 /// Small confirmation/share sheet shown after an export completes. Displays
 /// the format icon, entry count, on-disk size, and file name; the primary
 /// button is a `ShareLink` that hands the file to the system share sheet.
-struct ExportShareSheet: View {
-    let result: ExportResult
+@_spi(ForgeLogPrimitives) public struct ExportShareSheet: View {
+    public let result: ExportResult
     @Environment(\.dismiss) private var dismiss
     @Environment(\.forgeTheme) private var theme
+
+    public init(result: ExportResult) { self.result = result }
 
     private var fileSizeLabel: String {
         guard
@@ -27,7 +34,7 @@ struct ExportShareSheet: View {
         return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 18) {
             ZStack {
                 RoundedRectangle(cornerRadius: 18)
