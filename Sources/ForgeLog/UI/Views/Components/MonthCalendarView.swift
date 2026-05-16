@@ -46,11 +46,14 @@ struct MonthCalendarView: View {
 
     // MARK: - Header
 
+    /// Header shows two tappable menus (month and year) for fast jumping plus
+    /// prev/next chevrons for one-step navigation. The menus are SwiftUI
+    /// `Menu`s (not the SwiftUI DatePicker "tap-to-expand" behavior) — the
+    /// calendar grid stays visible, only a dropdown overlays.
     private var header: some View {
-        HStack(spacing: 4) {
-            Text(monthYearString)
-                .font(theme.sansFont(17, weight: .bold))
-                .foregroundColor(theme.text1)
+        HStack(spacing: 6) {
+            monthMenu
+            yearMenu
             Spacer()
             chevronButton(systemName: "chevron.left",
                           enabled: canGoPrevious,
@@ -60,6 +63,50 @@ struct MonthCalendarView: View {
                           action: { navigate(by: 1) })
         }
         .padding(.horizontal, 4)
+    }
+
+    private var monthMenu: some View {
+        Menu {
+            Picker("Month", selection: monthSelectionBinding) {
+                ForEach(1...12, id: \.self) { month in
+                    Text(Self.monthFormatter.standaloneMonthSymbols[month - 1])
+                        .tag(month)
+                }
+            }
+        } label: {
+            menuLabel(text: Self.monthFormatter.standaloneMonthSymbols[currentMonth - 1])
+        }
+    }
+
+    private var yearMenu: some View {
+        Menu {
+            Picker("Year", selection: yearSelectionBinding) {
+                ForEach(yearOptions, id: \.self) { year in
+                    Text(String(year)).tag(year)
+                }
+            }
+        } label: {
+            menuLabel(text: String(currentYear))
+        }
+    }
+
+    private func menuLabel(text: String) -> some View {
+        HStack(spacing: 3) {
+            Text(text)
+                .font(theme.sansFont(17, weight: .bold))
+                .foregroundColor(theme.text1)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(theme.text3)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(theme.surfaceHi)
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(theme.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 
     private func chevronButton(systemName: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -73,6 +120,55 @@ struct MonthCalendarView: View {
         .disabled(!enabled)
         .buttonStyle(.plain)
     }
+
+    // MARK: - Menu bindings
+
+    private var monthSelectionBinding: Binding<Int> {
+        Binding(
+            get: { currentMonth },
+            set: { newMonth in jump(month: newMonth, year: currentYear) }
+        )
+    }
+
+    private var yearSelectionBinding: Binding<Int> {
+        Binding(
+            get: { currentYear },
+            set: { newYear in jump(month: currentMonth, year: newYear) }
+        )
+    }
+
+    private var currentMonth: Int { calendar.component(.month, from: displayedMonth) }
+    private var currentYear: Int  { calendar.component(.year,  from: displayedMonth) }
+
+    /// Years offered by the year menu — bounded by `range` and clipped to a
+    /// reasonable window (±10y around the displayed year) so we don't render
+    /// a list of decades for the full `distantPast…distantFuture` span.
+    private var yearOptions: [Int] {
+        let rangeStartYear = calendar.component(.year, from: range.lowerBound)
+        let rangeEndYear   = calendar.component(.year, from: range.upperBound)
+        let lower = max(rangeStartYear, currentYear - 10)
+        let upper = min(rangeEndYear,   currentYear + 10)
+        guard lower <= upper else { return [currentYear] }
+        return Array(lower...upper)
+    }
+
+    /// Jumps the displayed month to a specific year+month, clamping the
+    /// resulting month-first date to the allowed `range`.
+    private func jump(month: Int, year: Int) {
+        var target = calendar.date(from: DateComponents(year: year, month: month)) ?? displayedMonth
+        if target < calendar.date(from: calendar.dateComponents([.year, .month], from: range.lowerBound))! {
+            target = calendar.date(from: calendar.dateComponents([.year, .month], from: range.lowerBound))!
+        }
+        if target > calendar.date(from: calendar.dateComponents([.year, .month], from: range.upperBound))! {
+            target = calendar.date(from: calendar.dateComponents([.year, .month], from: range.upperBound))!
+        }
+        guard target != displayedMonth else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            displayedMonth = target
+        }
+    }
+
+    private static let monthFormatter: DateFormatter = DateFormatter()
 
     // MARK: - Weekday labels
 
