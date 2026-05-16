@@ -1,5 +1,6 @@
 #if os(iOS) || os(visionOS)
 import SwiftUI
+import ForgeLog
 
 /// Drop this anywhere — the only view your app needs to reference for the
 /// network viewer. Symmetric with `ForgeLogView`.
