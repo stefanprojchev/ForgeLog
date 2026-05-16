@@ -122,16 +122,20 @@ struct DateRangePickerView: View {
         }()
         NavigationStack {
             VStack(spacing: 12) {
-                DatePicker(
-                    "",
-                    selection: binding,
-                    in: range,
-                    displayedComponents: [.date]
-                )
-                .labelsHidden()
-                .datePickerStyle(.graphical)
-                .tint(theme.accent)
-                .padding(.horizontal, 14)
+                // Custom calendar so the month/year header isn't tappable —
+                // SwiftUI's `DatePicker(.graphical)` lets the user collapse
+                // the grid into a year picker, which is what the user asked
+                // us to disable.
+                MonthCalendarView(selection: binding, in: range)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+                    .background(theme.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(theme.border, lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 14)
                 Spacer()
             }
             .padding(.top, 12)
