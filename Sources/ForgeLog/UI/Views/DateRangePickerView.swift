@@ -260,8 +260,18 @@ struct DateRangePickerView: View {
             }
             HistogramView(
                 buckets: histogramBuckets,
-                rangeStartIndex: rangeStartIndex,
-                rangeEndIndex: rangeEndIndex
+                rangeStartIndex: Binding(
+                    get: { rangeStartIndex },
+                    set: { newIndex in
+                        startDate = date(forBucketIndex: newIndex, endOfDay: false)
+                    }
+                ),
+                rangeEndIndex: Binding(
+                    get: { rangeEndIndex },
+                    set: { newIndex in
+                        endDate = date(forBucketIndex: newIndex, endOfDay: true)
+                    }
+                )
             )
             .frame(height: 130)
 
@@ -339,6 +349,20 @@ struct DateRangePickerView: View {
         let dayStart = cal.startOfDay(for: endDate)
         let offset = cal.dateComponents([.day], from: histogramStartOfDay, to: dayStart).day ?? 0
         return max(0, min(Self.histogramDays - 1, offset))
+    }
+
+    /// Converts a histogram bucket index back to a date. `endOfDay=false`
+    /// returns midnight (start of that day); `endOfDay=true` returns the
+    /// last instant of that day. Used by the histogram drag handles to
+    /// translate finger position → startDate/endDate.
+    private func date(forBucketIndex index: Int, endOfDay: Bool) -> Date {
+        let cal = Calendar.current
+        let clamped = max(0, min(Self.histogramDays - 1, index))
+        let dayStart = cal.date(byAdding: .day, value: clamped, to: histogramStartOfDay) ?? histogramStartOfDay
+        if endOfDay {
+            return cal.date(byAdding: DateComponents(day: 1, second: -1), to: dayStart) ?? dayStart
+        }
+        return dayStart
     }
 
     // MARK: - Presets
@@ -437,14 +461,30 @@ struct HistogramBucket {
     }
 }
 
-/// Bar chart with optional range markers (the two circles + "rods" from the
-/// design). Each bar stacks per-severity sub-bars from most-severe at top.
-/// Bars outside the selected range are dimmed.
+/// Interactive bar chart with two draggable range markers (the circles +
+/// vertical rods from the design). Each bar stacks per-severity sub-bars
+/// from most-severe at the top. Bars outside the selected range are dimmed.
+///
+/// **Interaction model**
+///
+/// `DragGesture(minimumDistance: 0)` covers the whole chart. On first touch
+/// we pick the marker (start or end) closer to the finger and lock it as
+/// the "active handle" for the gesture. Subsequent movement snaps to the
+/// nearest day boundary; the active handle's binding updates and the
+/// parent's date follows.
+///
+/// A tap (zero-movement drag) snaps the closer marker to the touched day —
+/// handy for quickly jumping to one end of the range.
 struct HistogramView: View {
     let buckets: [HistogramBucket]
-    let rangeStartIndex: Int
-    let rangeEndIndex: Int
+    @Binding var rangeStartIndex: Int
+    @Binding var rangeEndIndex: Int
+
     @Environment(\.forgeTheme) private var theme
+    @State private var activeHandle: Handle?
+    @State private var lastSnappedIndex: Int = -1
+
+    enum Handle: Equatable { case start, end }
 
     var body: some View {
         GeometryReader { geo in
@@ -466,9 +506,21 @@ struct HistogramView: View {
                     }
                 }
 
-                rangeMarker(at: rangeStartIndex, barWidth: barWidth, gap: gap, height: geo.size.height)
+                rangeMarker(
+                    at: rangeStartIndex,
+                    handle: .start,
+                    barWidth: barWidth,
+                    gap: gap,
+                    height: geo.size.height
+                )
                 if rangeEndIndex != rangeStartIndex {
-                    rangeMarker(at: rangeEndIndex, barWidth: barWidth, gap: gap, height: geo.size.height)
+                    rangeMarker(
+                        at: rangeEndIndex,
+                        handle: .end,
+                        barWidth: barWidth,
+                        gap: gap,
+                        height: geo.size.height
+                    )
                 }
 
                 // Baseline
@@ -477,8 +529,13 @@ struct HistogramView: View {
                     .frame(height: 0.5)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
+            .contentShape(Rectangle())
+            .gesture(dragGesture(width: geo.size.width, barWidth: barWidth, gap: gap, count: count))
+            .sensoryFeedback(.selection, trigger: lastSnappedIndex)
         }
     }
+
+    // MARK: - Bar
 
     @ViewBuilder
     private func bar(bucket: HistogramBucket, barWidth: CGFloat, maxTotal: Int, chartHeight: CGFloat, inRange: Bool) -> some View {
@@ -492,7 +549,6 @@ struct HistogramView: View {
                     .fill(theme.text4)
                     .frame(width: barWidth, height: totalHeight)
             } else {
-                // Stack severity sub-bars from top (most severe) to bottom.
                 ForEach((0..<4).reversed(), id: \.self) { raw in
                     let count = bucket.perLevel[raw]
                     if count > 0 {
@@ -507,28 +563,87 @@ struct HistogramView: View {
         .opacity(inRange ? 1 : 0.45)
     }
 
-    private func rangeMarker(at index: Int, barWidth: CGFloat, gap: CGFloat, height: CGFloat) -> some View {
+    // MARK: - Marker
+
+    private func rangeMarker(at index: Int, handle: Handle, barWidth: CGFloat, gap: CGFloat, height: CGFloat) -> some View {
         let x = CGFloat(index) * (barWidth + gap) + barWidth / 2
+        let isActive = activeHandle == handle
+        let circleSize: CGFloat = isActive ? 18 : 14
         return ZStack {
             // Vertical rod
             Rectangle()
-                .fill(theme.accent)
-                .frame(width: 2, height: height)
+                .fill(theme.accent.opacity(isActive ? 1.0 : 0.85))
+                .frame(width: isActive ? 3 : 2, height: height)
                 .position(x: x, y: height / 2)
             // Top circle
             Circle()
                 .fill(theme.accent)
-                .frame(width: 14, height: 14)
+                .frame(width: circleSize, height: circleSize)
                 .overlay(Circle().stroke(theme.bg, lineWidth: 2))
-                .position(x: x, y: 7)
+                .shadow(color: isActive ? theme.accent.opacity(0.4) : .clear, radius: isActive ? 4 : 0)
+                .position(x: x, y: circleSize / 2)
             // Bottom circle
             Circle()
                 .fill(theme.accent)
-                .frame(width: 14, height: 14)
+                .frame(width: circleSize, height: circleSize)
                 .overlay(Circle().stroke(theme.bg, lineWidth: 2))
-                .position(x: x, y: height - 7)
+                .shadow(color: isActive ? theme.accent.opacity(0.4) : .clear, radius: isActive ? 4 : 0)
+                .position(x: x, y: height - circleSize / 2)
         }
         .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.12), value: isActive)
+    }
+
+    // MARK: - Drag
+
+    private func dragGesture(width: CGFloat, barWidth: CGFloat, gap: CGFloat, count: Int) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if activeHandle == nil {
+                    activeHandle = pickHandle(forStartX: value.startLocation.x,
+                                              barWidth: barWidth,
+                                              gap: gap)
+                }
+                let newIndex = bucketIndex(forX: value.location.x,
+                                           width: width,
+                                           count: count)
+                apply(newIndex: newIndex)
+            }
+            .onEnded { _ in
+                activeHandle = nil
+            }
+    }
+
+    /// Pick the handle (start or end) closer to the initial touch x.
+    private func pickHandle(forStartX startX: CGFloat, barWidth: CGFloat, gap: CGFloat) -> Handle {
+        let startMarkerX = CGFloat(rangeStartIndex) * (barWidth + gap) + barWidth / 2
+        let endMarkerX = CGFloat(rangeEndIndex) * (barWidth + gap) + barWidth / 2
+        return abs(startX - startMarkerX) <= abs(startX - endMarkerX) ? .start : .end
+    }
+
+    private func bucketIndex(forX x: CGFloat, width: CGFloat, count: Int) -> Int {
+        let clamped = max(0, min(width, x))
+        let normalized = clamped / max(1, width)
+        return min(count - 1, max(0, Int(normalized * CGFloat(count))))
+    }
+
+    private func apply(newIndex: Int) {
+        switch activeHandle {
+        case .start:
+            let clamped = min(newIndex, rangeEndIndex)
+            if clamped != rangeStartIndex {
+                rangeStartIndex = clamped
+                lastSnappedIndex = clamped
+            }
+        case .end:
+            let clamped = max(newIndex, rangeStartIndex)
+            if clamped != rangeEndIndex {
+                rangeEndIndex = clamped
+                lastSnappedIndex = clamped + 1_000   // distinct trigger from start
+            }
+        case .none:
+            break
+        }
     }
 }
 #endif
