@@ -230,10 +230,12 @@ private struct OverviewTab: View {
             ActionRowNet(icon: "doc.on.doc",
                          label: "Copy cURL",
                          hint: "Reproduce",
+                         confirmationLabel: "cURL copied",
                          action: copyCurl)
             ActionRowNet(icon: "doc.on.doc",
                          label: "Copy URL",
                          hint: "Plain",
+                         confirmationLabel: "URL copied",
                          action: copyURL)
             exportMenu
             ShareLink(item: NetworkDetailView.curl(for: entry)) {
@@ -541,19 +543,34 @@ private struct TimingTab: View {
         .padding(.bottom, 24)
     }
 
+    /// Cumulative start offset (ms) for each phase. Pure — derived from
+    /// `phases` instead of a side-effecting `var` mutated inside `ForEach`,
+    /// which could mis-align bars when SwiftUI re-evaluates rows.
+    private var phaseStarts: [Int] {
+        var out: [Int] = []
+        out.reserveCapacity(phases.count)
+        var running = 0
+        for p in phases {
+            out.append(running)
+            running += p.ms
+        }
+        return out
+    }
+
     private var waterfall: some View {
-        var offset = 0
-        return VStack(spacing: 10) {
+        VStack(spacing: 10) {
             ForEach(phases.indices, id: \.self) { i in
                 let p = phases[i]
-                let startPct = CGFloat(offset) / CGFloat(total)
+                let startPct = CGFloat(phaseStarts[i]) / CGFloat(total)
                 let widthPct = max(0.005, CGFloat(p.ms) / CGFloat(total))
-                let _ = (offset += p.ms)
                 HStack(spacing: 8) {
                     Text(p.label)
                         .font(theme.monoFont(11))
                         .foregroundColor(theme.text2)
-                        .frame(width: 100, alignment: .leading)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .truncationMode(.tail)
+                        .frame(width: 108, alignment: .leading)
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 2)
@@ -562,14 +579,18 @@ private struct TimingTab: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(p.color)
                                 .opacity(p.ms == 0 ? 0.25 : 1)
-                                .frame(width: geo.size.width * widthPct, height: 8)
-                                .offset(x: geo.size.width * startPct)
+                                .frame(width: max(1, min(geo.size.width - geo.size.width * startPct,
+                                                         geo.size.width * widthPct)),
+                                       height: 8)
+                                .offset(x: min(geo.size.width, geo.size.width * startPct))
                         }
+                        .frame(maxHeight: .infinity, alignment: .center)
                     }
-                    .frame(height: 8)
+                    .frame(height: 14)
                     Text(p.ms == 0 ? "—" : "\(p.ms)ms")
                         .font(theme.monoFont(11, weight: .semibold))
                         .foregroundColor(theme.text1)
+                        .lineLimit(1)
                         .frame(width: 60, alignment: .trailing)
                 }
             }
@@ -852,24 +873,44 @@ private struct ActionRowNet: View {
     let icon: String
     let label: String
     var hint: String? = nil
+    var confirmationLabel: String? = nil
     let action: () -> Void
     @Environment(\.forgeTheme) private var theme
+    @State private var confirmed: Bool = false
 
     var body: some View {
-        Button(action: action) {
-            Self.chrome(icon: icon, label: label, hint: hint, theme: theme)
+        Button {
+            action()
+            if confirmationLabel != nil {
+                withAnimation(.snappy(duration: 0.18)) { confirmed = true }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.4))
+                    withAnimation(.snappy(duration: 0.22)) { confirmed = false }
+                }
+            }
+        } label: {
+            if confirmed, let confirmationLabel {
+                Self.chrome(icon: "checkmark", label: confirmationLabel, hint: nil,
+                            theme: theme, accentOverride: theme.success)
+            } else {
+                Self.chrome(icon: icon, label: label, hint: hint, theme: theme)
+            }
         }
         .buttonStyle(.plain)
+        .sensoryFeedback(.success, trigger: confirmed) { _, new in new }
     }
 
-    static func chrome(icon: String, label: String, hint: String?, theme: ForgeLogTheme) -> some View {
-        HStack(spacing: 10) {
+    static func chrome(icon: String, label: String, hint: String?, theme: ForgeLogTheme,
+                       accentOverride: Color? = nil) -> some View {
+        let tint = accentOverride ?? theme.accent
+        return HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 14))
-                .foregroundColor(theme.accent)
+                .foregroundColor(tint)
+                .contentTransition(.symbolEffect(.replace))
             Text(label)
                 .font(theme.sansFont(13, weight: .medium))
-                .foregroundColor(theme.text1)
+                .foregroundColor(accentOverride ?? theme.text1)
             Spacer()
             if let hint {
                 Text(hint)
@@ -883,8 +924,11 @@ private struct ActionRowNet: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.border, lineWidth: 1))
+        .background(accentOverride == nil ? theme.surface : tint.opacity(0.1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(accentOverride == nil ? theme.border : tint.opacity(0.45), lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
