@@ -1,7 +1,7 @@
 #if os(iOS) || os(visionOS)
 import SwiftUI
 
-extension Color {
+public extension Color {
     /// `Color(hex: "#0B0B0E")` or `Color(hex: "#FFFFFF", opacity: 0.5)`.
     /// Accepts 3, 6, or 8-digit forms (last 2 digits = alpha when 8-digit).
     init(hex: String, opacity: Double = 1.0) {
