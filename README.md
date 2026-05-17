@@ -11,6 +11,11 @@ Structured, pluggable logging for iOS and macOS apps.
 
 ForgeLog is the logging library in the **Forge** family of iOS packages. One singleton, one configure call, a small set of focused providers. Log entries are structured (level, message, processes, module, metadata), so they can be filtered, exported, or fanned out to remote endpoints without losing fidelity.
 
+The package ships **two targets**:
+
+- **`ForgeLog`** — the structured logger and its SwiftUI inspector (`ForgeLogFlowView`).
+- **`ForgeNet`** — a sibling URL-loading interceptor and SwiftUI inspector (`ForgeNetFlowView`) for capturing every `URLRequest` / `URLResponse` your app issues.
+
 Built on Swift 6 strict concurrency. No `@unchecked Sendable`, no `NSLock` — internal synchronization uses [`LockedState`](https://github.com/stefanprojchev/ForgeCore) (Swift `Mutex` under the hood) and file I/O goes through `SendableFileManager`.
 
 ## Features
@@ -152,7 +157,7 @@ let exportURL = try await exporter.export(today, format: .json)
 
 ## UI
 
-ForgeLog ships a full SwiftUI log viewer. Drop it anywhere:
+ForgeLog ships a full SwiftUI log viewer. It owns its own `NavigationStack` via `ForgeLogFlowRouter` — drop the flow view anywhere:
 
 ```swift
 import SwiftUI
@@ -160,14 +165,22 @@ import ForgeLog
 
 struct DebugMenu: View {
     var body: some View {
-        NavigationStack {
-            ForgeLogView()
-        }
+        ForgeLogFlowView()
     }
 }
 ```
 
-`ForgeLogView` owns a `LogViewerStore` that attaches a `LogViewerProvider` to `ForgeLog.shared` — every entry your app emits from that point on shows up in the viewer live. The viewer respects the system color scheme by default and persists a per-user override under `@AppStorage("forgeTheme")` (`"system"` / `"dark"` / `"light"`).
+`ForgeLogFlowView` owns a `LiveLogBuffer` (Data layer) that attaches a `LogViewerProvider` to `ForgeLog.shared` — every entry your app emits from that point on shows up in the viewer live. The `LogListViewModel` derives counts, filters, and sparkline buckets from the buffer. The viewer respects the system color scheme by default and persists a per-user override under `@AppStorage("forgeTheme")` (`"system"` / `"dark"` / `"light"`).
+
+> A `ForgeLogView` typealias for `ForgeLogFlowView` is kept for source compatibility, but new code should prefer `ForgeLogFlowView()`.
+
+To customize buffer size and behavior, pass a `LiveLogBufferConfiguration`:
+
+```swift
+ForgeLogFlowView(
+    bufferConfiguration: LiveLogBufferConfiguration(maxEntries: 5_000)
+)
+```
 
 The UI is **iOS-only** (also visionOS). On macOS the package still builds; UI types simply aren't present.
 
@@ -182,6 +195,65 @@ The UI is **iOS-only** (also visionOS). On macOS the package still builds; UI ty
 - Expandable rows with attachment chips (`{·} N`, `NSError`)
 - Detail sheet with structured `Parameters` and `Swift Error` sections
 - **Settings → Providers** — lists the providers currently attached to `ForgeLog.shared` with each provider's minimum level
+
+## ForgeNet — network inspector
+
+The sibling `ForgeNet` target captures `URLSession` traffic via a custom `URLProtocol` and exposes the same kind of inspector UI for requests and responses.
+
+### Enable capture
+
+```swift
+import ForgeNet
+
+@main
+struct YourApp: App {
+    init() {
+        ForgeNet.shared.start()                  // installs ForgeNetURLProtocol globally
+        // …or attach to a specific session configuration:
+        // ForgeNet.shared.attach(to: configuration)
+    }
+
+    var body: some Scene { … }
+}
+```
+
+Every captured entry is appended to `ForgeNet.shared.buffer` — a `NetworkLogBuffer` holding the latest N `NetworkLogEntry` values.
+
+### Inspector UI
+
+```swift
+import SwiftUI
+import ForgeNet
+
+struct DebugMenu: View {
+    var body: some View {
+        ForgeNetFlowView()
+    }
+}
+```
+
+`ForgeNetFlowView` owns a `ForgeNetFlowRouter` (its own `NavigationStack`) and renders list, detail, filters, settings, and concepts screens. A `ForgeNetView` typealias is kept for source compatibility.
+
+The list groups by HTTP status family (1xx–5xx) with tappable cards, supports filtering by method / host / status, and the detail screen breaks each entry into Request / Response / Timing sections.
+
+## The Forge Family
+
+ForgeLog is part of the **Forge** family of Swift packages for iOS.
+
+| Package | Description |
+|---|---|
+| [ForgeCore](https://github.com/stefanprojchev/ForgeCore) | Thread-safe primitives for iOS Swift packages. |
+| [ForgeInject](https://github.com/stefanprojchev/ForgeInject) | Dependency injection with constructor and property wrapper support. |
+| [ForgeObservers](https://github.com/stefanprojchev/ForgeObservers) | Reactive system observers — connectivity, lifecycle, keyboard, and more. |
+| [ForgeStorage](https://github.com/stefanprojchev/ForgeStorage) | Type-safe key-value, file, and Keychain storage. |
+| [ForgeDB](https://github.com/stefanprojchev/ForgeDB) | Type-safe repository pattern and GRDB-backed SQLite persistence. |
+| [ForgeOrchestrator](https://github.com/stefanprojchev/ForgeOrchestrator) | Orchestrate app flows — startup gates, data pipelines, and continuous monitors. |
+| [ForgePush](https://github.com/stefanprojchev/ForgePush) | Push notification management — permissions, tokens, and routing. |
+| [ForgeLocation](https://github.com/stefanprojchev/ForgeLocation) | Location triggers — geofencing, significant changes, and visits. |
+| [ForgeBackgroundTasks](https://github.com/stefanprojchev/ForgeBackgroundTasks) | Background task scheduling and dispatch. |
+| [ForgeNetworking](https://github.com/stefanprojchev/ForgeNetworking) | Typed, async/await-first HTTP networking with auth, retry, and background transfers. |
+| **ForgeLog** | Structured logging with pluggable providers and a built-in inspector UI. |
+| [ForgeAccess](https://github.com/stefanprojchev/ForgeAccess) | Subscription-aware feature gating with override channels and debug UI. |
 
 ## License
 
